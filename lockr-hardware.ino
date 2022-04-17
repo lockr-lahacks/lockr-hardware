@@ -13,7 +13,12 @@
 
 #include <SPI.h>
 #include <MFRC522.h>
+#define PIR_ONE 22
 
+#define TRIG_ONE 2
+#define ECHO_ONE 4
+long cm1=-1;
+long cm2=-1;
 
 #define RST_PIN         15          // Configurable, see typical pin layout above
 #define SS_PIN          21          // Configurable, see typical pin layout above
@@ -21,6 +26,16 @@
 
 String ID;
 Servo myservo;  // create servo object to control a servo
+
+
+
+int irOneVal = 0;
+int irOneState = LOW;
+
+long closeOneTimer = 0;
+bool shouldCloseOne = false;
+
+
 
 void openDoor1(){
   myservo.write(0);
@@ -38,9 +53,13 @@ FirebaseData fbdo, lockrs;
 String lockrStates[2] = {"true","true"};
 
 String lockrsPath = "/lockrs";
-String individualLockrs[2] = {"/1","/2"};
+String individualLockrs[2] = {"/1/isClosed","/2/isClosed"};
 
 volatile bool dataChanged= false;
+
+long microsecondsToCentimeters(long microseconds) {
+   return microseconds / 29 / 2;
+}
 
 void lockrStreamCallback(MultiPathStream stream){
   size_t numLockrs = sizeof(individualLockrs) / sizeof(individualLockrs[0]);
@@ -69,6 +88,7 @@ void lockrStreamCallback(MultiPathStream stream){
           else if(pastLockerState.compareTo("false") == 0) {
             Serial.println("Closing door!");
             closeDoor1();
+            shouldCloseOne = false;
           }
         }
         else {
@@ -110,7 +130,11 @@ String getID(){
 void setup()
 {
 
-  Serial.begin(115200);
+  Serial.begin(115200);  
+
+  //setting ultrasonics
+  pinMode(TRIG_ONE, OUTPUT);
+  pinMode(ECHO_ONE, INPUT);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
@@ -214,6 +238,45 @@ void setup()
 void loop()
 {
   count++;
+  //ultrasonic distance readings if one of them is open
+  if(lockrStates[0].compareTo("false")==0 || lockrStates[1].compareTo("false")==0 && !shouldCloseOne){
+  digitalWrite(TRIG_ONE,LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_ONE,HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_ONE,LOW);
+  long duration, dx1, newCM1;
+  duration = pulseIn(ECHO_ONE,HIGH);
+
+  newCM1 = microsecondsToCentimeters(duration);
+  dx1= cm1 < 0 ? 0 : abs(newCM1 - cm1);
+  Serial.println(dx1);
+  // Serial.println(dx1);
+  if(dx1>15){
+    Serial.println("Hand detected!");
+    shouldCloseOne=true;
+    return;
+  }
+  cm1 = newCM1;
+  //Serial.print("CM: ");
+  //Serial.println(cm);
+  }
+  //else if you should close door one
+  if(shouldCloseOne){
+    if(closeOneTimer<200){
+    Serial.println(closeOneTimer);
+    closeOneTimer++;
+    }
+    else if(closeOneTimer>=200){
+      Serial.printf("Closing door one... %s\n", Firebase.RTDB.setBool(&fbdo, F("/lockrs/1/isClosed"),true ) ? "ok" : fbdo.errorReason().c_str());
+      closeOneTimer=0;
+      shouldCloseOne=false;
+    }
+  }
+
+
+
+
   if (count >=500 && Firebase.ready() && mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
       //Serial.println("Found a card!");
         // delay(100);
