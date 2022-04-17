@@ -17,16 +17,22 @@
 
 #define TRIG_ONE 2
 #define ECHO_ONE 4
+
+#define TRIG_TWO 27
+#define ECHO_TWO 14
+
 long cm1=-1;
 long cm2=-1;
 
 #define RST_PIN         15          // Configurable, see typical pin layout above
 #define SS_PIN          21          // Configurable, see typical pin layout above
 #define SERVO_PIN 5
+#define SERVO2_PIN 25
 #define BUZZER_PIN 32
 
 String ID;
 Servo myservo;  // create servo object to control a servo
+Servo myservo2;
 
 
 
@@ -35,7 +41,7 @@ int irOneState = LOW;
 
 long closeOneTimer = 0;
 bool shouldCloseOne = false;
-
+bool shouldCloseTwo = false;
 
 
 void openDoor1(){
@@ -44,6 +50,15 @@ void openDoor1(){
 void closeDoor1(){
   myservo.write(180);
 }
+
+void openDoor2(){
+  myservo2.write(0);
+}
+
+void closeDoor2(){
+  myservo2.write(180);
+}
+
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 
@@ -83,14 +98,26 @@ void lockrStreamCallback(MultiPathStream stream){
         //handle door 1 changing
         if(i==0){
           if(pastLockerState.compareTo("true") == 0){
-            Serial.println("Opening door!");
+            Serial.println("Opening door 1!");
             openDoor1();
           }
           else if(pastLockerState.compareTo("false") == 0) {
-            Serial.println("Closing door!");
+            Serial.println("Closing door 1!");
             closeDoor1();
             shouldCloseOne = false;
           }
+        }
+        //handle door 2 changing
+        else if(i==1){
+          if(pastLockerState.compareTo("true") == 0){
+            Serial.println("Opening door 2!");
+            openDoor2();
+          }
+          else if(pastLockerState.compareTo("false") == 0) {
+            Serial.println("Closing door 2!");
+            closeDoor2();
+            shouldCloseTwo = false;
+          }          
         }
         else {
           Serial.println("Past");
@@ -232,6 +259,8 @@ void setup()
   ESP32PWM::allocateTimer(2);
   ESP32PWM::allocateTimer(3);
   myservo.setPeriodHertz(50);    // standard 50 hz servo
+  myservo2.setPeriodHertz(50);
+  myservo2.attach(SERVO2_PIN, 1000, 2000);
   myservo.attach(SERVO_PIN, 1000, 2000); // attaches the servo on pin 18 to the servo object
   // using default min/max of 1000us and 2000us
   // different servos may require different min/max settings
