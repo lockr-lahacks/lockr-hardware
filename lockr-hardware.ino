@@ -23,6 +23,7 @@ long cm2=-1;
 #define RST_PIN         15          // Configurable, see typical pin layout above
 #define SS_PIN          21          // Configurable, see typical pin layout above
 #define SERVO_PIN 5
+#define BUZZER_PIN 32
 
 String ID;
 Servo myservo;  // create servo object to control a servo
@@ -135,6 +136,8 @@ void setup()
   //setting ultrasonics
   pinMode(TRIG_ONE, OUTPUT);
   pinMode(ECHO_ONE, INPUT);
+
+  pinMode(BUZZER_PIN,OUTPUT);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
@@ -283,6 +286,12 @@ void loop()
         // delay(75);
         ID = getID();
         Serial.println(ID);
+        tone(BUZZER_PIN, 390);
+        delay(200);
+        noTone(BUZZER_PIN);
+        tone(BUZZER_PIN, 523);
+        delay(175);
+        noTone(BUZZER_PIN);
         if (Firebase.RTDB.getString(&fbdo, FPSTR("/currCard"))) {
             Serial.println("User already logged in.");            
             return;
