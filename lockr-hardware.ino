@@ -2,7 +2,7 @@
 
 #include <WiFi.h>
 #include <sstream>  
-
+#include <ESP32Servo.h>
 #include <Firebase_ESP_Client.h>
 
 // Provide the token generation process info.
@@ -14,17 +14,82 @@
 #include <SPI.h>
 #include <MFRC522.h>
 
+
 #define RST_PIN         15          // Configurable, see typical pin layout above
 #define SS_PIN          21          // Configurable, see typical pin layout above
+#define SERVO_PIN 4
 
 String ID;
+Servo myservo;  // create servo object to control a servo
+
+void openDoor1(){
+  myservo.write(0);
+}
+void closeDoor1(){
+  myservo.write(180);
+}
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance.
 
 MFRC522::MIFARE_Key key;
 
 // Define Firebase Data object
-FirebaseData fbdo;
+FirebaseData fbdo, lockrs;
+String lockrStates[2] = {"true","true"};
+
+String lockrsPath = "/lockrs";
+String individualLockrs[2] = {"/1","/2"};
+
+volatile bool dataChanged= false;
+
+void lockrStreamCallback(MultiPathStream stream){
+  size_t numLockrs = sizeof(individualLockrs) / sizeof(individualLockrs[0]);
+  Serial.println("Handling stream");
+  //Serial.println(numLockrs);
+  for(size_t i=0; i<numLockrs; i++){
+    if (stream.get(individualLockrs[i])){
+      if (dataChanged){
+        Serial.println("Data already changed");
+        return;
+      }
+      String currLockerState = stream.value;
+      Serial.println("Stream Locker State:");
+      Serial.println(currLockerState);
+      Serial.println("Past Locker State: ");
+      String pastLockerState = lockrStates[i];
+      Serial.println(pastLockerState);
+      if(currLockerState != pastLockerState){
+        Serial.println("Changing door state!");
+        //handle door 1 changing
+        if(i==0){
+          if(pastLockerState.compareTo("true") == 0){
+            Serial.println("Opening door!");
+            openDoor1();
+          }
+          else if(pastLockerState.compareTo("false") == 0) {
+            Serial.println("Closing door!");
+            closeDoor1();
+          }
+        }
+        else {
+          Serial.println("Past");
+          Serial.println(pastLockerState);
+        }
+        lockrStates[i] = currLockerState;
+        dataChanged = true;
+      }
+    }
+  }
+}
+
+void lockrStreamTimeoutCallback(bool timeout)
+{
+  if (timeout)
+    Serial.println("stream timed out, resuming...\n");
+
+  if (!lockrs.httpConnected())
+    Serial.printf("error code: %d, reason: %s\n\n", lockrs.httpCode(), lockrs.errorReason().c_str());
+}
 
 FirebaseAuth auth;
 FirebaseConfig config;
@@ -90,6 +155,13 @@ void setup()
   // Comment or pass false value when WiFi reconnection will control by your code or third party library
   Firebase.reconnectWiFi(true);
 
+  if(!Firebase.RTDB.beginMultiPathStream(&lockrs, lockrsPath))
+    Serial.printf("stream begin error, %s\n\n", lockrs.errorReason().c_str());
+  
+  //start the data stream
+  Serial.println("Starting locker stream");
+  Firebase.RTDB.setMultiPathStreamCallback(&lockrs, lockrStreamCallback, lockrStreamTimeoutCallback);
+
   Firebase.setDoubleDigits(5);
 
   Serial.println("Setting up RFID...");
@@ -127,19 +199,28 @@ void setup()
   config.tcp_data_sending_retry = 1;
 
   */
+ // Allow allocation of all timers
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  myservo.setPeriodHertz(50);    // standard 50 hz servo
+  myservo.attach(SERVO_PIN, 1000, 2000); // attaches the servo on pin 18 to the servo object
+  // using default min/max of 1000us and 2000us
+  // different servos may require different min/max settings
+  // for an accurate 0 to 180 sweep
 }
 
 void loop()
 {
-
-  if (Firebase.ready() && mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
-      Serial.println("Found a card!");
-        delay(100);
-        delay(75);
+  count++;
+  myservo.write(180);
+  if (count >=500 && Firebase.ready() && mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+      //Serial.println("Found a card!");
+        // delay(100);
+        // delay(75);
         ID = getID();
         Serial.println(ID);
-        //Serial.printf("Set curr User... %s\n", Firebase.RTDB.setString(&fbdo, F("/currCard"), ID) ? "ok" : fbdo.errorReason().c_str());
-        //check if user already logged in
         if (Firebase.RTDB.getString(&fbdo, FPSTR("/currCard"))) {
             Serial.println("User already logged in.");            
             return;
@@ -148,40 +229,9 @@ void loop()
         else {
           Serial.printf("Set curr User... %s\n", Firebase.RTDB.setString(&fbdo, F("/currCard"), ID) ? "ok" : fbdo.errorReason().c_str());
         }
-    
+      count=0;
+      Serial.println(count);
   }
-  // Firebase.ready() should be called repeatedly to handle authentication tasks.
-  
-  // if (Firebase.ready() && (millis() - sendDataPrevMillis > 15000 || sendDataPrevMillis == 0))
-  // {
-  //   sendDataPrevMillis = millis();
-
-  //   Serial.printf("Set bool... %s\n", Firebase.RTDB.setBool(&fbdo, F("/test/bool"), count % 2 == 0) ? "ok" : fbdo.errorReason().c_str());
-
-    // Serial.printf("Get bool... %s\n", Firebase.RTDB.getBool(&fbdo, FPSTR("/test/bool")) ? fbdo.to<bool>() ? "true" : "false" : fbdo.errorReason().c_str());
-
-  //   bool bVal;
-  //   Serial.printf("Get bool ref... %s\n", Firebase.RTDB.getBool(&fbdo, F("/test/bool"), &bVal) ? bVal ? "true" : "false" : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Set int... %s\n", Firebase.RTDB.setInt(&fbdo, F("/test/int"), count) ? "ok" : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Get int... %s\n", Firebase.RTDB.getInt(&fbdo, F("/test/int")) ? String(fbdo.to<int>()).c_str() : fbdo.errorReason().c_str());
-
-  //   int iVal = 0;
-  //   Serial.printf("Get int ref... %s\n", Firebase.RTDB.getInt(&fbdo, F("/test/int"), &iVal) ? String(iVal).c_str() : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Set float... %s\n", Firebase.RTDB.setFloat(&fbdo, F("/test/float"), count + 10.2) ? "ok" : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Get float... %s\n", Firebase.RTDB.getFloat(&fbdo, F("/test/float")) ? String(fbdo.to<float>()).c_str() : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Set double... %s\n", Firebase.RTDB.setDouble(&fbdo, F("/test/double"), count + 35.517549723765) ? "ok" : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Get double... %s\n", Firebase.RTDB.getDouble(&fbdo, F("/test/double")) ? String(fbdo.to<double>()).c_str() : fbdo.errorReason().c_str());
-
-    // Serial.printf("Set string... %s\n", Firebase.RTDB.setString(&fbdo, F("/test/string"), F("Hello World!")) ? "ok" : fbdo.errorReason().c_str());
-
-  //   Serial.printf("Get string... %s\n", Firebase.RTDB.getString(&fbdo, F("/test/string")) ? fbdo.to<const char *>() : fbdo.errorReason().c_str());
-
   //   // For the usage of FirebaseJson, see examples/FirebaseJson/BasicUsage/Create_Edit_Parse.ino
   //   FirebaseJson json;
 
@@ -217,7 +267,10 @@ void loop()
 
   //   count++;
   // }
-  delay(500);
+  if (dataChanged){
+    dataChanged= false;
+  }
+  //delay(500);
 }
 
 /** NOTE:
@@ -280,14 +333,7 @@ void loop()
  *
  */
 
-//  void beginOpenCloseStream(){
-//    Serial.println("Begin open closing stream...");
-//   if (!Firebase.RTDB.beginStream(&fbdo, "/openclose"))
-//   {
-//     Serial.println("FAILED");
-//     Serial.println("REASON: " + fbdo.errorReason());
-//     Serial.println();
-//     Serial.println();
-//   }
-//  }
+
+
+
 
