@@ -17,7 +17,7 @@
 
 #define RST_PIN         15          // Configurable, see typical pin layout above
 #define SS_PIN          21          // Configurable, see typical pin layout above
-#define SERVO_PIN 4
+#define SERVO_PIN 5
 
 String ID;
 Servo myservo;  // create servo object to control a servo
@@ -214,7 +214,6 @@ void setup()
 void loop()
 {
   count++;
-  myservo.write(180);
   if (count >=500 && Firebase.ready() && mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
       //Serial.println("Found a card!");
         // delay(100);
